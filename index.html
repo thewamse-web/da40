@@ -3,24 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DAX 40 Eagle Eye Scanner (Finnhub Live)</title>
+    <title>DAX 40 Eagle Eye Scanner</title>
     <style>
         body { font-family: 'Segoe UI', sans-serif; background-color: #131722; color: #d1d4dc; margin: 0; padding: 10px; overflow: hidden; }
-        .layout { display: grid; grid-template-columns: 480px 1fr; gap: 10px; height: 98vh; }
-        .sidebar { background: #1e222d; border-radius: 8px; border: 1px solid #363c4e; display: flex; flex-direction: column; padding: 10px; overflow-y: auto; }
+        .layout { display: grid; grid-template-columns: 400px 1fr; gap: 10px; height: 98vh; }
+        .sidebar { background: #1e222d; border-radius: 8px; border: 1px solid #363c4e; display: flex; flex-direction: column; padding: 15px; overflow-y: auto; }
         .main-content { display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
         .chart-container { flex-grow: 1; background: #1e222d; border-radius: 8px; border: 1px solid #363c4e; overflow: hidden; }
-        
-        .refresh-btn { background-color: #2962ff; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; font-weight: bold; margin-bottom: 10px; width: 100%; }
-        h3 { color: #2962ff; margin: 5px 0; font-size: 1.1em; text-align: center; }
-        
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.85em; }
-        th, td { text-align: left; padding: 8px; border-bottom: 1px solid #363c4e; cursor: pointer; }
-        th { color: #b2b5be; position: sticky; top: 0; background: #1e222d; }
+        .refresh-btn { background-color: #2962ff; color: white; border: none; padding: 12px; border-radius: 5px; cursor: pointer; font-weight: bold; margin-bottom: 15px; }
+        h3 { color: #2962ff; margin: 0 0 10px 0; text-align: center; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.85em; }
+        th, td { text-align: left; padding: 10px; border-bottom: 1px solid #363c4e; cursor: pointer; }
         tr:hover { background-color: #2a2e39; }
         .up { color: #00ff88; }
         .down { color: #ff3333; }
-        .loading { text-align: center; padding: 20px; font-style: italic; color: #2962ff; }
     </style>
 </head>
 <body>
@@ -28,124 +24,105 @@
 <div class="layout">
     <div class="sidebar">
         <h3>DAX 40 Live Scanner</h3>
-        <button class="refresh-btn" onclick="updateAllData()">🔄 OPDATER LIVE DATA</button>
-        <div id="loadingStatus" class="loading" style="display:none;">Henter data fra Finnhub...</div>
-        
-        <table id="daxTable">
+        <button class="refresh-btn" onclick="fetchFinnhubData()">🔄 OPDATER SCANNER</button>
+        <table id="stockTable">
             <thead>
                 <tr>
                     <th>Aktie</th>
                     <th>Pris</th>
-                    <th>%</th>
-                    <th>Volumen</th>
+                    <th>Ændring %</th>
                 </tr>
             </thead>
-            <tbody id="daxTableBody">
-                <!-- Data lander her -->
+            <tbody id="stockList">
+                <!-- Her lander aktierne -->
             </tbody>
         </table>
     </div>
 
     <div class="main-content">
-        <div class="chart-container">
-            <div id="tv-chart" style="height: 100%;"></div>
+        <div class="chart-container" id="tv_chart_container">
+            <!-- Diagrammet indlæses her -->
         </div>
-        <div id="tech-analysis" style="height: 200px; background: #1e222d; border-radius: 8px; border: 1px solid #363c4e;"></div>
+        <div id="tech_summary_container" style="height: 200px; background: #1e222d; border-radius: 8px; border: 1px solid #363c4e;"></div>
     </div>
 </div>
 
 <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-<script type="text/javascript">
-    const apiKey = 'd82nn1hr01qmgc0gr7dgd82nn1hr01qmgc0gr7e0';
-    const daxSymbols = [
-        "ADS.DE", "ALV.DE", "BAS.DE", "BAYN.DE", "BEI.DE", "BMW.DE", "CON.DE", "1COV.DE",
-        "DTG.DE", "DB1.DE", "DBK.DE", "DHL.DE", "DTE.DE", "EOAN.DE", "FRE.DE", "HEI.DE",
-        "HEN3.DE", "IFX.DE", "MBG.DE", "MRK.DE", "MTX.DE", "MUV2.DE", "PAH3.DE", "PUM.DE",
-        "RWE.DE", "SAP.DE", "SRT3.DE", "SIE.DE", "SY1.DE", "VOW3.DE", "VNA.DE", "RHM.DE"
-    ];
+<script>
+    const API_KEY = 'd82nn1hr01qmgc0gr7dgd82nn1hr01qmgc0gr7e0';
+    const DAX_SYMBOLS = ["ADS.DE", "ALV.DE", "BAS.DE", "BAYN.DE", "BMW.DE", "DBK.DE", "DTE.DE", "EOAN.DE", "IFX.DE", "SAP.DE", "SIE.DE", "VOW3.DE"];
 
-    // Initialiser TradingView Graf
-    let chart = new TradingView.widget({
-        "autosize": true,
-        "symbol": "XETR:DAX",
-        "interval": "15",
-        "theme": "dark",
-        "style": "1",
-        "locale": "da_DK",
-        "studies": ["RSI@tv-basicstudies", "MACD@tv-basicstudies", "Volume@tv-basicstudies"],
-        "container_id": "tv-chart"
-    });
+    // 1. Funktion til at indlæse diagram (bruger XETR for at undgå fejlen i billede.png)
+    function loadChart(symbol) {
+        const cleanSymbol = symbol.replace('.DE', '');
+        new TradingView.widget({
+            "autosize": true,
+            "symbol": "XETR:" + cleanSymbol,
+            "interval": "15",
+            "timezone": "Europe/Berlin",
+            "theme": "dark",
+            "style": "1",
+            "locale": "da_DK",
+            "studies": ["RSI@tv-basicstudies", "MACD@tv-basicstudies", "Volume@tv-basicstudies"],
+            "container_id": "tv_chart_container"
+        });
+        loadSummary(cleanSymbol);
+    }
 
-    function updateTechAnalysis(symbol) {
-        const cleanSymbol = symbol.replace('.DE', '').replace('XETR:', '');
-        document.getElementById('tech-analysis').innerHTML = '';
+    // 2. Teknisk opsummering (RSI/MACD status)
+    function loadSummary(symbol) {
+        document.getElementById('tech_summary_container').innerHTML = '';
         const script = document.createElement('script');
-        script.type = 'text/javascript';
         script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.js';
         script.async = true;
         script.innerHTML = JSON.stringify({
             "interval": "15m",
             "width": "100%",
             "height": "100%",
-            "symbol": "XETR:" + cleanSymbol,
+            "symbol": "XETR:" + symbol,
             "showIntervalTabs": true,
-            "displayMode": "multiple",
             "locale": "da_DK",
             "colorTheme": "dark"
         });
-        document.getElementById('tech-analysis').appendChild(script);
+        document.getElementById('tech_summary_container').appendChild(script);
     }
 
-    async function updateAllData() {
-        const btn = document.querySelector('.refresh-btn');
-        const loader = document.getElementById('loadingStatus');
-        btn.disabled = true;
-        loader.style.display = 'block';
+    // 3. Hent data fra Finnhub og sorter efter din strategi
+    async function fetchFinnhubData() {
+        const list = document.getElementById('stockList');
+        list.innerHTML = '<tr><td colspan="3" style="text-align:center;">Henter kurser...</td></tr>';
+        
+        let stockData = [];
 
-        const tableBody = document.getElementById('daxTableBody');
-        const results = [];
-
-        for (const symbol of daxSymbols) {
+        for (const sym of DAX_SYMBOLS) {
             try {
-                const response = await fetch(`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${apiKey}`);
+                const response = await fetch(`https://finnhub.io/api/v1/quote?symbol=${sym}&token=${API_KEY}`);
                 const data = await response.json();
                 if (data.c) {
-                    results.push({
-                        symbol: symbol.replace('.DE', ''),
-                        price: data.c,
-                        change: data.dp,
-                        raw: data
-                    });
+                    stockData.push({ symbol: sym, price: data.c, change: data.dp });
                 }
-            } catch (e) { console.error("Fejl ved hentning af " + symbol); }
+            } catch (e) { console.error(e); }
         }
 
-        // SORTERING: Her kan vi rykke dem med størst fald øverst (potentiale for RSI-vending)
-        results.sort((a, b) => a.change - b.change);
+        // Sortering: Dem der er faldet mest rykkes øverst (potentiale for RSI vending)
+        stockData.sort((a, b) => a.change - b.change);
 
-        tableBody.innerHTML = '';
-        results.forEach(stock => {
-            const row = tableBody.insertRow();
-            row.onclick = () => {
-                chart.options.symbol = "XETR:" + stock.symbol;
-                new TradingView.widget(chart.options);
-                updateTechAnalysis(stock.symbol);
-            };
-            
+        list.innerHTML = '';
+        stockData.forEach(stock => {
+            const row = document.createElement('tr');
+            row.onclick = () => loadChart(stock.symbol);
             row.innerHTML = `
-                <td><strong>${stock.symbol}</strong></td>
+                <td><strong>${stock.symbol.replace('.DE', '')}</strong></td>
                 <td>${stock.price.toFixed(2)} €</td>
                 <td class="${stock.change >= 0 ? 'up' : 'down'}">${stock.change.toFixed(2)}%</td>
-                <td style="font-size:0.7em; color:#b2b5be;">Klik for RSI/MACD</td>
             `;
+            list.appendChild(row);
         });
-
-        btn.disabled = false;
-        loader.style.display = 'none';
     }
 
-    updateAllData();
-    updateTechAnalysis("DAX");
+    // Start programmet
+    fetchFinnhubData();
+    loadChart("DAX");
 </script>
 
 </body>
